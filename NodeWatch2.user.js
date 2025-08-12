@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NodeWatch 2.0
 // @namespace    http://tampermonkey.net/
-// @version      3.6.5
+// @version      3.6.6
 // @description  A modern WebSocket toolkit for fukuro.online with game fixes, intelligent RP Search, and more.
 // @author       NodeWatch Team & AI Assistant
 // @match        https://*.fukuro.online/*
@@ -743,7 +743,8 @@
                                 onload: (response) => {
                                     const shortUrl = response.responseText;
                                     if (shortUrl && shortUrl.startsWith('http')) {
-                                        const newMessage = { ...message, message: shortUrl };
+                                        // MODIFICATION: Prepend NRP chat indicator
+                                        const newMessage = { ...message, message: `(( ${shortUrl}` };
                                         originalSend(JSON.stringify(newMessage));
                                     } else {
                                         originalSend(data);
