@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NodeWatch 2.0
 // @namespace    http://tampermonkey.net/
-// @version      3.6.6
+// @version      3.6.7
 // @description  A modern WebSocket toolkit for fukuro.online with game fixes, intelligent RP Search, and more.
 // @author       NodeWatch Team & AI Assistant
 // @match        https://*.fukuro.online/*
@@ -9,6 +9,7 @@
 // @require      https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js
 // @connect      fukuro.ssdk.dev
 // @connect      tinyurl.com
+// @grant        GM_info
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
@@ -331,6 +332,22 @@
                 State.ui.panel.append(wsInput, sendButton);
             }
 
+            // MODIFICATION: Add version label
+            const versionLabel = Utils.create('div', {
+                textContent: `v${GM_info.script.version}`,
+                styles: {
+                    position: 'absolute',
+                    bottom: '2px',
+                    right: '15px',
+                    color: '#777',
+                    fontSize: '11px',
+                    userSelect: 'none',
+                    pointerEvents: 'none'
+                }
+            });
+            State.ui.panel.appendChild(versionLabel);
+
+
             document.body.appendChild(State.ui.panel);
             Utils.makeDraggable(State.ui.panel, title);
             Utils.makeResizable(State.ui.panel);
@@ -500,7 +517,7 @@
         },
         sendRawMessage(message) { try { JSON.parse(message); State.ws.send(message); document.getElementById('nw-ws-input').value = ''; } catch (e) { alert("Invalid JSON format!"); } },
         splitAndSendMessage(text) { const originalSend = State.ws.send.bind(State.ws); const textParts = []; let remainingText = text.trim(); const MAX_LENGTH = 500, ELLIPSIS = "...", DO_PREFIX = "/do "; let isFirst = true; while (remainingText.length > 0) { let limit = isFirst ? MAX_LENGTH - ELLIPSIS.length : MAX_LENGTH - DO_PREFIX.length - (ELLIPSIS.length * 2); let part = remainingText.substring(0, limit); if (remainingText.length > limit) { const lastSpace = part.lastIndexOf(' '); if (lastSpace > -1) { part = part.substring(0, lastSpace); } } textParts.push(part); remainingText = remainingText.substring(part.length).trim(); isFirst = false; } textParts.forEach((part, index) => { let finalMessage; const isFirstChunk = index === 0, isLastChunk = index === textParts.length - 1; if (isFirstChunk && isLastChunk) { finalMessage = part; } else if (isFirstChunk) { finalMessage = part + ELLIPSIS; } else if (isLastChunk) { finalMessage = DO_PREFIX + ELLIPSIS + part; } else { finalMessage = DO_PREFIX + ELLIPSIS + part + ELLIPSIS; } setTimeout(() => { const payload = JSON.stringify({ reason: 'chatMessage', message: finalMessage }); originalSend(payload); }, index * 3000); }); },
-        sendImage(url) { if (!url || !url.startsWith('http')) { alert('Invalid URL.'); return; } UIManager.showNotification('Shortening URL...', 'info'); GM_xmlhttpRequest({ method: "GET", url: `https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`, onload: (response) => { const shortUrl = response.responseText; if (shortUrl && shortUrl.startsWith('http')) { State.ws.send(JSON.stringify({ reason: 'chatMessage', message: shortUrl })); } else { alert('Failed to shorten URL.'); } }, onerror: () => { alert('Error connecting to URL shortening service.'); } }); },
+        sendImage(url) { if (!url || !url.startsWith('http')) { alert('Invalid URL.'); return; } UIManager.showNotification('Shortening URL...', 'info'); GM_xmlhttpRequest({ method: "GET", url: `https://tinyurl.com/api-create.php?url=${encodeURIComponent(url)}`, onload: (response) => { const shortUrl = response.responseText; if (shortUrl && shortUrl.startsWith('http')) { State.ws.send(JSON.stringify({ reason: 'chatMessage', message: `(( ${shortUrl}` })); } else { alert('Failed to shorten URL.'); } }, onerror: () => { alert('Error connecting to URL shortening service.'); } }); },
     };
 
     const ImageRenderer = {
