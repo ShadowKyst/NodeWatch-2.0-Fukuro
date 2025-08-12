@@ -50,7 +50,7 @@ NodeWatch 2.0 — это современный и мощный инструме
 
 2.  **Установи NodeWatch 2.0**
     *   Теперь, когда путёвка у тебя в руках, просто нажми на эту кнопку. Твой браузер предложит установить скрипт.
-    *   **[>>> УСТАНОВИТЬ NODEWATCH 2.0 <<<](https://github.com/ShadowKyst/NodeWatch-2.0-Fukuro/raw/master/NodeWatch2.user.js)**
+    *   **[>>> УСТАНОВИТЬ NODEWATCH 2.0 <<<](https://github.com/ShadowKyst/NodeWatch-2.0-Fukuro/raw/main/NodeWatch2.user.js)**
 
 3.  **Отправляйся в путь!**
     *   Открывай `fukuro.online` и наслаждайся! Твой новый друг уже будет ждать тебя в углу экрана.
@@ -76,4 +76,5 @@ NodeWatch 2.0 — это современный и мощный инструме
 <br/>
 <div align="center">
   <p><em>С теплом и любовью,<br/>NodeWatch и их верный ИИ-помощник ❤️</em></p>
+
 </div>
