@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         NodeWatch 2.0
 // @namespace    http://tampermonkey.net/
-// @version      3.6.4
+// @version      3.6.5
 // @description  A modern WebSocket toolkit for fukuro.online with game fixes, intelligent RP Search, and more.
 // @author       NodeWatch Team & AI Assistant
 // @match        https://*.fukuro.online/*
+// @match        https://*.fukuro.su/*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js
 // @connect      fukuro.ssdk.dev
+// @connect      tinyurl.com
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_xmlhttpRequest
@@ -436,7 +438,7 @@
     };
 
     const BotAPI = {
-        async loadMap() { if (State.api.nodesConfig) return true; try { const r = await fetch('https://fukuro.online/storage/configs/nodes.conf'); const c = await r.json(); State.api.nodesConfig = c.nodes; return true; } catch (e) { return false; } },
+        async loadMap() { if (State.api.nodesConfig) return true; try { const r = await fetch(`${window.location.protocol}//${window.location.hostname}/storage/configs/nodes.conf`); const c = await r.json(); State.api.nodesConfig = c.nodes; return true; } catch (e) { console.error("[NodeWatch] Failed to load map config:", e); return false; } },
         findPath: (startNode, endNode) => { if (!State.api.nodesConfig) return null; let q = [[startNode]], v = new Set([startNode]); while (q.length > 0) { let p = q.shift(), n = p[p.length - 1]; if (n === endNode) return p; const c = State.api.nodesConfig.find(node => node.code === n); if (c && c.data.action) { for (const a of c.data.action) { const neighbor = a.target; if (State.api.nodesConfig.find(node => node.code === neighbor) && !v.has(neighbor)) { v.add(neighbor); q.push([...p, neighbor]); } } } } return null; },
         async navigateTo(targetNode, delay = State.settings.gotoDelay) {
             if (State.api.isNavigating) return;
@@ -704,7 +706,11 @@
     function interceptWebSocket() {
         const originalWebSocket = unsafeWindow.WebSocket;
         unsafeWindow.WebSocket = function(url, protocols) {
-            if (!url.includes('fukuro.online')) return new originalWebSocket(url, protocols);
+            // Check if the URL is for one of the target game domains
+            if (!url.includes('fukuro.online') && !url.includes('fukuro.su')) {
+                return new originalWebSocket(url, protocols);
+            }
+
             const wsInstance = new originalWebSocket(url, protocols);
             State.ws = wsInstance;
             const originalSend = wsInstance.send.bind(wsInstance);
@@ -731,7 +737,7 @@
                         }
 
                         if (urlToShorten && !urlToShorten.includes('tinyurl.com')) {
-                            GM_xmlhttpRequest({
+                             GM_xmlhttpRequest({
                                 method: "GET",
                                 url: `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`,
                                 onload: (response) => {
@@ -780,4 +786,5 @@
 
     console.log("[NodeWatch 2.0] Script loaded. Waiting for WebSocket connection...");
     interceptWebSocket();
+
 })();
