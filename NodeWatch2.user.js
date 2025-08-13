@@ -1,12 +1,14 @@
 // ==UserScript==
 // @name         NodeWatch 2.0
 // @namespace    http://tampermonkey.net/
-// @version      3.7.0
+// @version      3.8.0
 // @description  A modern WebSocket toolkit for fukuro.online with game fixes, intelligent RP Search, and more.
 // @author       NodeWatch Team & AI Assistant
 // @match        https://*.fukuro.online/*
 // @match        https://*.fukuro.su/*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.1.1/crypto-js.min.js
+// @require      https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js
+// @require      https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js
 // @connect      fukuro.ssdk.dev
 // @connect      tinyurl.com
 // @grant        GM_info
@@ -17,6 +19,8 @@
 
 (function() {
     'use strict';
+
+    const log = (message, ...args) => console.log(`[NodeWatch 2.0] ${message}`, ...args);
 
     // --- Settings Management ---
     const defaultSettings = {
@@ -465,6 +469,226 @@
         createNotificationContainer() { State.ui.notificationContainer = Utils.create('div', { id: 'nw-notification-container', styles: { position: 'fixed', top: '10px', right: '10px', zIndex: '10000', display: 'flex', flexDirection: 'column', gap: '8px', alignItems: 'flex-end' } }); document.body.appendChild(State.ui.notificationContainer); }, showNotification(message, type = 'info') { if (!State.ui.notificationContainer) this.createNotificationContainer(); const colors = { join: { bg: 'rgba(20, 80, 40, 0.85)', border: '#2a9d8f' }, leave: { bg: 'rgba(100, 30, 30, 0.85)', border: '#e76f51' }, info: { bg: 'rgba(30, 40, 80, 0.85)', border: '#4a4a8d' } }; const color = colors[type] || colors.info; const notif = Utils.create('div', { innerHTML: message, styles: { padding: '10px 15px', borderRadius: '5px', backgroundColor: color.bg, border: `1px solid ${color.border}`, color: '#f0f0f0', fontFamily: 'sans-serif', fontSize: '14px', boxShadow: '0 2px 10px rgba(0,0,0,0.5)', opacity: '0', transform: 'translateX(20px)', transition: 'opacity 0.3s ease, transform 0.3s ease' } }); State.ui.notificationContainer.appendChild(notif); requestAnimationFrame(() => { notif.style.opacity = '1'; notif.style.transform = 'translateX(0)'; }); setTimeout(() => { notif.style.opacity = '0'; notif.style.transform = 'translateX(20px)'; setTimeout(() => notif.remove(), 300); }, 5000); }, removeChatLimit() { const observer = setInterval(() => { const chatInput = document.getElementById('chat-input'); if (chatInput) { chatInput.removeAttribute('maxlength'); clearInterval(observer); } }, 500); }, destroy() { if (State.ui.panel) State.ui.panel.remove(); if (State.ui.notificationContainer) State.ui.notificationContainer.remove(); if (State.ui.rpSearchPopup) State.ui.rpSearchPopup.remove(); this.stopUpdater(); Object.assign(State.ui, { panel: null, statusLine: null, notificationContainer: null, updateInterval: null, rpSearchPopup: null }); }, startUpdater() { if (!State.ui.updateInterval) State.ui.updateInterval = setInterval(this.updateStatus, 500); this.updateStatus(); }, stopUpdater() { clearInterval(State.ui.updateInterval); State.ui.updateInterval = null; }, updateStatus() { if (!State.isReady || !State.ui.statusLine) return; try { const { name, node } = State.vuex.state.player; const navStatus = State.api.isNavigating ? ` <span style="color: #fca311;">(Navigating...)</span>` : ''; State.ui.statusLine.innerHTML = `Player: <span style="color: #ffffff;">${name}</span><br>Node: <span style="color: #ffffff;">${node}</span>${navStatus}`; } catch (e) { State.ui.statusLine.textContent = 'Error updating status.'; } }
     };
 
+
+const TypingIndicator = {
+    vueInstance: null,
+    typingUsers: {},
+    chatContainer: null,
+
+    init() {
+        log('Initializing Final Native Typing Indicator v4 (Pixel Perfect)...');
+
+        this.chatContainer = document.querySelector('.chat__story');
+        if (!this.chatContainer) {
+            setTimeout(() => this.init(), 1000);
+            return;
+        }
+
+        const indicatorContainer = Utils.create('div', { id: 'nw-typing-indicator-container' });
+        this.chatContainer.appendChild(indicatorContainer);
+
+        this.typingUsers = new Vue({ data: { users: {} } }).$data;
+
+        this.vueInstance = new Vue({
+            el: '#nw-typing-indicator-container',
+            data: this.typingUsers,
+            computed: {
+                typingText() {
+                    const names = Object.values(this.users);
+                    if (names.length === 0) return '';
+                    if (names.length === 1) return `${names[0]} печатает...`;
+                    if (names.length === 2) return `${names[0]} и ${names[1]} печатают...`;
+                    return 'Несколько человек печатают...';
+                }
+            },
+            watch: {
+                typingText(newText) {
+                    if (newText) {
+                        this.$nextTick(() => {
+                            const container = TypingIndicator.chatContainer;
+                            if (container.scrollTop + container.clientHeight >= container.scrollHeight - 60) {
+                                container.scrollTop = container.scrollHeight;
+                            }
+                        });
+                    }
+                }
+            },
+            template: `
+                <div v-if="typingText" class="nw-typing-indicator"
+                     style="
+                        /* Базовые стили контейнера */
+                        height: 28px;
+                        width: 100%;
+
+                        /* Стили текста */
+                        padding: 0 14px;
+                        padding-top: 2px; /* <<< НЕБОЛЬШОЙ ОТСТУП СВЕРХУ */
+                        font-size: 48px; /* <<< УМЕНЬШЕННЫЙ РАЗМЕР */
+                        line-height: 28px;
+                        font-family: 'Linux', linux-biolinum-g-regular;
+                        text-align: left;
+                        color: #bb9f51;
+                        font-style: italic;
+                        /* text-shadow: ...; <<< ТЕНЬ УБРАНА */
+
+                        /* Анимация */
+                        opacity: 0;
+                        animation: nw-fade-in 0.3s forwards;
+                    ">
+                    {{ typingText }}
+                </div>
+            `
+        });
+
+        if (!document.getElementById('nw-animation-styles')) {
+            const style = Utils.create('style', {
+                id: 'nw-animation-styles',
+                innerHTML: `
+                    @keyframes nw-fade-in {
+                        to { opacity: 1; }
+                    }
+                `
+            });
+            document.head.appendChild(style);
+        }
+
+        log('Final Native Typing Indicator v4 initialized.');
+    },
+
+    update(senderId, senderName, isTyping) {
+        if (!this.vueInstance) return;
+
+        if (isTyping) {
+            Vue.set(this.typingUsers.users, senderId, senderName);
+        } else {
+            Vue.delete(this.typingUsers.users, senderId);
+        }
+    }
+};
+
+    const TypingTracker = {
+    typingTimer: null,
+    isCurrentlyTyping: false,
+    TYPING_TIMER_LENGTH: 2000,
+
+    init() {
+        log('Initializing Typing Tracker...');
+        const observer = new MutationObserver((mutations, obs) => {
+            const chatInput = document.getElementById('chat-input');
+            if (chatInput) {
+                log('Chat input found. Attaching event listeners.');
+                this.attachListeners(chatInput);
+                obs.disconnect();
+            }
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    },
+
+    attachListeners(inputElement) {
+        inputElement.addEventListener('input', () => {
+            clearTimeout(this.typingTimer);
+            if (!this.isCurrentlyTyping) {
+                this.isCurrentlyTyping = true;
+                this.sendStatus(true);
+            }
+            this.typingTimer = setTimeout(() => {
+                this.isCurrentlyTyping = false;
+                this.sendStatus(false);
+            }, this.TYPING_TIMER_LENGTH);
+        });
+
+        inputElement.addEventListener('blur', () => {
+            clearTimeout(this.typingTimer);
+            if (this.isCurrentlyTyping) {
+                this.isCurrentlyTyping = false;
+                this.sendStatus(false);
+            }
+        });
+
+        inputElement.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                clearTimeout(this.typingTimer);
+                if (this.isCurrentlyTyping) {
+                    this.isCurrentlyTyping = false;
+                    this.sendStatus(false);
+                }
+            }
+        });
+    },
+
+    sendStatus(isTyping) {
+        ExternalComms.sendTypingStatus(isTyping);
+    }
+};
+
+    const ExternalComms = {
+        socket: null,
+        lastNode: null,
+
+        init() {
+            log('Initializing External Communications...');
+            this.socket = io("wss://fukuro.ssdk.dev", {
+                transports: ['websocket'],
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionAttempts: 10
+            });
+            this.setupEventHandlers();
+            this.startNodeWatcher();
+        },
+
+        setupEventHandlers() {
+            this.socket.on('connect', () => {
+                log('Connected to external server (fukuro.ssdk.dev). Authenticating...');
+                this.authenticate();
+            });
+            this.socket.on('disconnect', () => log('Disconnected from external server.'));
+            this.socket.on('typing_update', (data) => {
+                if (MuteManager.isMuted(data.sender_id)) return;
+                TypingIndicator.update(data.sender_id, data.sender_name, data.is_typing);
+            });
+        },
+
+        authenticate() {
+            if (!State.vuex || !State.vuex.state.player) {
+                log('Authentication failed: Vuex not ready.');
+                return;
+            }
+            const getCookie = (name) => {
+                const value = `; ${document.cookie}`;
+                const parts = value.split(`; ${name}=`);
+                if (parts.length === 2) return parts.pop().split(';').shift();
+            };
+            const playerHash = getCookie('hash');
+            const { id, name } = State.vuex.state.player;
+            if (!playerHash || !id) {
+                 log('Authentication failed: Missing hash or player ID.');
+                 return;
+            }
+            this.socket.emit('authenticate', { player_hash: playerHash, player_id: id, player_name: name });
+        },
+
+        startNodeWatcher() {
+            setInterval(() => {
+                if (!State.isReady || !this.socket.connected) return;
+                const currentNode = State.vuex.state.player.node;
+                if (currentNode && currentNode !== this.lastNode) {
+                    this.lastNode = currentNode;
+                    this.socket.emit('join_room', { node: currentNode });
+                    log(`Joined room: ${currentNode}`);
+                }
+            }, 1000);
+        },
+
+        sendTypingStatus(isTyping) {
+            if (this.socket && this.socket.connected) {
+                this.socket.emit('typing_status', { is_typing: isTyping });
+            } else {
+                log('Could not send typing status: not connected to external server.');
+            }
+        }
+    };
+
     const BotAPI = {
         async loadMap() { if (State.api.nodesConfig) return true; try { const r = await fetch(`${window.location.protocol}//${window.location.hostname}/storage/configs/nodes.conf`); const c = await r.json(); State.api.nodesConfig = c.nodes; return true; } catch (e) { console.error("[NodeWatch] Failed to load map config:", e); return false; } },
         findPath: (startNode, endNode) => { if (!State.api.nodesConfig) return null; let q = [[startNode]], v = new Set([startNode]); while (q.length > 0) { let p = q.shift(), n = p[p.length - 1]; if (n === endNode) return p; const c = State.api.nodesConfig.find(node => node.code === n); if (c && c.data.action) { for (const a of c.data.action) { const neighbor = a.target; if (State.api.nodesConfig.find(node => node.code === neighbor) && !v.has(neighbor)) { v.add(neighbor); q.push([...p, neighbor]); } } } } return null; },
@@ -879,6 +1103,12 @@
                             UIManager.showNotification(`❌ <b>${player ? player.name : 'User'}</b> has left.`, 'leave');
                         }
                         break;
+                    case 'typing_update':
+                        const player = State.vuex.state.players.find(p => p.id === data.sender_id);
+                        if (player) {
+                            TypingIndicator.update(data.sender_id, player.name, data.is_typing);
+                        }
+                        return;
                     case 'server_online':
                         if (RpSearcher.isScanning) {
                             RpSearcher.processInitialData(data);
@@ -958,6 +1188,9 @@
             Settings.load();
             MuteManager.init();
             UIManager.init();
+            ExternalComms.init();
+            TypingIndicator.init();
+            TypingTracker.init();
             ImageRenderer.init();
             GameFixes.init();
             GamePatcher.init();
