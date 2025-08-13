@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         NodeWatch 2.0
 // @namespace    http://tampermonkey.net/
-// @version      3.6.7
+// @version      3.7.0
 // @description  A modern WebSocket toolkit for fukuro.online with game fixes, intelligent RP Search, and more.
 // @author       NodeWatch Team & AI Assistant
 // @match        https://*.fukuro.online/*
@@ -28,6 +28,7 @@
         enableRpSearch: true,
         enableWsSender: true,
         enableGotoCommand: true,
+        enableMutePanel: true,
     };
 
     const Settings = {
@@ -321,6 +322,16 @@
                 const rpSearchButton = this.createRpSearchButton();
                 actionsContainer.append(rpSearchButton);
             }
+
+            if (State.settings.enableMutePanel) {
+                const muteButton = Utils.create('button', {
+                    textContent: 'Муты',
+                    styles: { padding: '8px', backgroundColor: '#5a189a', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', flex: '1' }
+                });
+                muteButton.onclick = () => MuteManager.showPanel();
+                actionsContainer.append(muteButton);
+            }
+
             const settingsButton = this.createSettingsButton();
             actionsContainer.append(settingsButton);
             State.ui.panel.append(actionsContainer);
@@ -332,7 +343,6 @@
                 State.ui.panel.append(wsInput, sendButton);
             }
 
-            // MODIFICATION: Add version label
             const versionLabel = Utils.create('div', {
                 textContent: `v${GM_info.script.version}`,
                 styles: {
@@ -438,6 +448,7 @@
                     createSettingCheckbox('enableGotoCommand', 'Enable Goto Command', 'Allow navigating via the command bar'),
                     createSettingCheckbox('enableRpSearch', 'Enable RP Search', 'Show the "Search RP" button'),
                     createSettingCheckbox('enableWsSender', 'Enable WS Sender', 'Show the raw WebSocket message sender'),
+                    createSettingCheckbox('enableMutePanel', 'Enable Mute Panel', 'Показывать кнопку "Муты" на главной панели'),
                     createSettingCheckbox('enableImgCommand', 'Enable /img Command', 'Allow sending images via the navigation bar')
                 );
 
@@ -651,6 +662,119 @@
         }
     };
 
+    const MuteManager = {
+        mutedUsers: [], // Структура: {id: 'sender-uuid', name: 'PlayerName'}
+
+        init() {
+            this.mutedUsers = []; // Гарантируем, что список пуст при инициализации
+            console.log("[NodeWatch 2.0] MuteManager initialized (Session-only mutes).");
+        },
+
+        isMuted(senderId) {
+            return this.mutedUsers.some(user => user.id === senderId);
+        },
+
+        mute(senderId, senderName) {
+            if (!this.isMuted(senderId)) {
+                this.mutedUsers.push({ id: senderId, name: senderName });
+                UIManager.showNotification(`<b>${senderName}</b> был замучен до перезагрузки.`, 'leave');
+                this.updatePanelIfOpen(); // Обновляем UI, если он открыт
+            }
+        },
+
+        unmute(senderId) {
+            const user = this.mutedUsers.find(u => u.id === senderId);
+            if (user) {
+                this.mutedUsers = this.mutedUsers.filter(u => u.id !== senderId);
+                UIManager.showNotification(`<b>${user.name}</b> был размучен.`, 'join');
+                this.updatePanelIfOpen(); // Обновляем UI, если он открыт
+            }
+        },
+
+        updatePanelIfOpen() {
+            const mutePanelContent = document.getElementById('nw-popup-content');
+            if (mutePanelContent && document.getElementById('nw-popup-title')?.textContent.includes('Управление мутами')) {
+                 this.renderPanelContent(mutePanelContent);
+            }
+        },
+
+        showPanel() {
+            UIManager.showPopup("Управление мутами (сессия)", (content) => {
+                this.renderPanelContent(content);
+            }, () => { /* onCancel */ });
+        },
+
+        renderPanelContent(container) {
+            container.innerHTML = '';
+            const tabs = Utils.create('div', { styles: { display: 'flex', borderBottom: '1px solid #4a4a8d', marginBottom: '10px' } });
+            const locationTab = Utils.create('button', { textContent: 'На локации', styles: { padding: '8px', border: 'none', background: 'transparent', color: '#88aaff', cursor: 'pointer' } });
+            const mutedTab = Utils.create('button', { textContent: `Замученные (${this.mutedUsers.length})`, styles: { padding: '8px', border: 'none', background: 'transparent', color: 'white', cursor: 'pointer' } });
+
+            const locationContent = Utils.create('div');
+            const mutedContent = Utils.create('div', { styles: { display: 'none' } });
+
+            tabs.append(locationTab, mutedTab);
+            container.append(tabs, locationContent, mutedContent);
+
+            const switchTab = (activeTab) => {
+                if (activeTab === 'location') {
+                    locationTab.style.color = '#88aaff';
+                    locationTab.style.borderBottom = '2px solid #88aaff';
+                    mutedTab.style.color = 'white';
+                    mutedTab.style.borderBottom = 'none';
+                    locationContent.style.display = 'block';
+                    mutedContent.style.display = 'none';
+                } else {
+                    locationTab.style.color = 'white';
+                    locationTab.style.borderBottom = 'none';
+                    mutedTab.style.color = '#88aaff';
+                    mutedTab.style.borderBottom = '2px solid #88aaff';
+                    locationContent.style.display = 'none';
+                    mutedContent.style.display = 'block';
+                }
+            };
+            locationTab.onclick = () => switchTab('location');
+            mutedTab.onclick = () => switchTab('muted');
+            switchTab('location');
+
+            // Вкладка "На локации"
+            const playersOnNode = State.vuex.state.players.filter(p => p.id !== State.vuex.state.player.id);
+            if (playersOnNode.length === 0) {
+                locationContent.textContent = 'На локации больше никого нет.';
+            } else {
+                playersOnNode.forEach(player => {
+                    const isMuted = this.isMuted(player.id);
+                    const playerDiv = Utils.create('div', { styles: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid #2a2a4d' } });
+                    const playerName = Utils.create('span', { textContent: `${player.name} (ID: ${player.local_id})` });
+                    const muteButton = Utils.create('button', { textContent: isMuted ? 'Замучен' : 'Мут', styles: { padding: '4px 8px', backgroundColor: isMuted ? '#6c757d' : '#e76f51', color: 'white', border: 'none', borderRadius: '4px', cursor: isMuted ? 'default' : 'pointer' } });
+
+                    if (!isMuted) {
+                        muteButton.onclick = () => this.mute(player.id, player.name);
+                    } else {
+                        muteButton.disabled = true;
+                    }
+                    playerDiv.append(playerName, muteButton);
+                    locationContent.appendChild(playerDiv);
+                });
+            }
+
+            // Вкладка "Замученные"
+            if (this.mutedUsers.length === 0) {
+                mutedContent.textContent = 'Список замученных пуст.';
+            } else {
+                this.mutedUsers.forEach(mutedUser => {
+                    const userDiv = Utils.create('div', { styles: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0', borderBottom: '1px solid #2a2a4d' } });
+                    const userName = Utils.create('span', { textContent: mutedUser.name });
+                    const unmuteButton = Utils.create('button', { textContent: 'Размутить', styles: { padding: '4px 8px', backgroundColor: '#2a9d8f', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' } });
+                    unmuteButton.onclick = () => this.unmute(mutedUser.id);
+
+                    userDiv.append(userName, unmuteButton);
+                    mutedContent.appendChild(userDiv);
+                });
+            }
+        }
+    };
+
     const GameFixes = {
         playButtonObserver: null,
         init() { this.observePlayButton(); },
@@ -704,85 +828,125 @@
         }
     };
 
-    function handleWebSocketMessage(event) {
-        try {
-            const data = JSON.parse(event.data);
-            const myId = State.vuex.state.player.id;
-            switch (data.reason) {
-                case 'userJoin': if (data.user && data.user.id !== myId) UIManager.showNotification(`✅ <b>${data.user.name}</b> has joined.`, 'join'); break;
-                case 'userLeft': if (data.initiator && data.initiator !== myId) { const player = State.vuex.state.players.find(p => p.id === data.initiator); UIManager.showNotification(`❌ <b>${player ? player.name : 'User'}</b> has left.`, 'leave'); } break;
-                case 'server_online':
-                    if (RpSearcher.isScanning) {
-                        RpSearcher.processInitialData(data);
-                    }
-                    break;
-            }
-        } catch (e) { /* Ignore non-JSON messages */ }
-    }
+   
 
     function interceptWebSocket() {
-        const originalWebSocket = unsafeWindow.WebSocket;
-        unsafeWindow.WebSocket = function(url, protocols) {
-            // Check if the URL is for one of the target game domains
-            if (!url.includes('fukuro.online') && !url.includes('fukuro.su')) {
-                return new originalWebSocket(url, protocols);
+    const originalWebSocket = unsafeWindow.WebSocket;
+    unsafeWindow.WebSocket = function(url, protocols) {
+        // Проверяем, что это WebSocket игры
+        if (!url.includes('fukuro.online') && !url.includes('fukuro.su')) {
+            return new originalWebSocket(url, protocols);
+        }
+
+        console.log("[NodeWatch 2.0] Intercepting game WebSocket connection...");
+        const wsInstance = new originalWebSocket(url, protocols);
+        State.ws = wsInstance;
+
+        let _originalOnMessage = null;
+
+        // Перехватываем установку обработчика onmessage
+        Object.defineProperty(wsInstance, 'onmessage', {
+            get: () => _originalOnMessage,
+            set: (handler) => {
+                console.log("[NodeWatch 2.0] Game's onmessage handler has been captured.");
+                _originalOnMessage = handler;
+            },
+            configurable: true
+        });
+
+        // Наш собственный обработчик, который будет решать, передавать ли сообщение игре
+        wsInstance.addEventListener('message', (event) => {
+            // Сначала обрабатываем нетекстовые сообщения, например, ID сессии
+            if (!event.data.startsWith('{')) {
+                if (typeof _originalOnMessage === 'function') {
+                    _originalOnMessage.call(wsInstance, event);
+                }
+                return;
             }
 
-            const wsInstance = new originalWebSocket(url, protocols);
-            State.ws = wsInstance;
-            const originalSend = wsInstance.send.bind(wsInstance);
+            try {
+                const data = JSON.parse(event.data);
+                const myId = State.vuex ? State.vuex.state.player.id : null;
 
-            const IMAGE_URL_REGEX = /^(https?:\/\/[^\s]*\.(?:png|gif|jpg|jpeg|webp)[^\s]*)$/i;
-            const IMG_COMMAND_REGEX = /^\/img\s+(https?:\/\/[^\s]+)/i;
-
-            wsInstance.send = function(data) {
-                try {
-                    const message = JSON.parse(data);
-                    if (message.reason === 'chatMessage' && State.settings.enableImgCommand) {
-                        if (message.message.length > 500) { BotAPI.splitAndSendMessage(message.message); return; }
-
-                        const trimmedMessage = message.message.trim();
-                        const imgCommandMatch = trimmedMessage.match(IMG_COMMAND_REGEX);
-                        const plainLinkMatch = trimmedMessage.match(IMAGE_URL_REGEX);
-
-                        let urlToShorten = null;
-
-                        if (imgCommandMatch) {
-                            urlToShorten = imgCommandMatch[1];
-                        } else if (plainLinkMatch) {
-                            urlToShorten = plainLinkMatch[1];
+                // --- 1. Логика NodeWatch (уведомления, сканер и т.д.) ---
+                switch (data.reason) {
+                    case 'userJoin':
+                        if (data.user && data.user.id !== myId) UIManager.showNotification(`✅ <b>${data.user.name}</b> has joined.`, 'join');
+                        break;
+                    case 'userLeft':
+                        if (data.initiator && data.initiator !== myId) {
+                            const player = State.vuex.state.players.find(p => p.id === data.initiator);
+                            UIManager.showNotification(`❌ <b>${player ? player.name : 'User'}</b> has left.`, 'leave');
                         }
-
-                        if (urlToShorten && !urlToShorten.includes('tinyurl.com')) {
-                             GM_xmlhttpRequest({
-                                method: "GET",
-                                url: `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`,
-                                onload: (response) => {
-                                    const shortUrl = response.responseText;
-                                    if (shortUrl && shortUrl.startsWith('http')) {
-                                        // MODIFICATION: Prepend NRP chat indicator
-                                        const newMessage = { ...message, message: `(( ${shortUrl}` };
-                                        originalSend(JSON.stringify(newMessage));
-                                    } else {
-                                        originalSend(data);
-                                    }
-                                },
-                                onerror: () => {
-                                    originalSend(data);
-                                }
-                            });
-                            return;
+                        break;
+                    case 'server_online':
+                        if (RpSearcher.isScanning) {
+                            RpSearcher.processInitialData(data);
                         }
+                        break;
+                }
+
+                if (data.reason === 'chat' && data.sender) {
+                    if (MuteManager.isMuted(data.sender)) {
+                        // Сообщение от замученного пользователя.
+                        // Логируем и НЕ передаем его дальше.
+                        console.log(`[NodeWatch 2.0] Blocked message from muted user: ${data.sender}`);
+                        return;
                     }
-                } catch (e) { /* Not a JSON message */ }
-                originalSend(data);
-            };
-            wsInstance.addEventListener('open', () => setTimeout(initializeVuex, 500));
-            wsInstance.addEventListener('close', () => { State.isReady = false; UIManager.destroy(); GameFixes.destroy(); });
-            wsInstance.addEventListener('message', handleWebSocketMessage);
-            return wsInstance;
+                }
+
+                // --- 3. Если сообщение не было заблокировано, передаем его оригинальному обработчику игры ---
+                if (typeof _originalOnMessage === 'function') {
+                    _originalOnMessage.call(wsInstance, event);
+                }
+
+            } catch (e) {
+                // Если произошла ошибка парсинга, все равно передаем сообщение игре на всякий случай
+                if (typeof _originalOnMessage === 'function') {
+                    _originalOnMessage.call(wsInstance, event);
+                }
+            }
+        });
+
+        wsInstance.addEventListener('open', () => setTimeout(initializeVuex, 500));
+        wsInstance.addEventListener('close', () => { State.isReady = false; UIManager.destroy(); GameFixes.destroy(); });
+
+        const originalSend = wsInstance.send.bind(wsInstance);
+        wsInstance.send = function(data) {
+            try {
+                const message = JSON.parse(data);
+                if (message.reason === 'chatMessage' && State.settings.enableImgCommand) {
+                    if (message.message.length > 500) { BotAPI.splitAndSendMessage(message.message); return; }
+                    const trimmedMessage = message.message.trim();
+                    const IMG_COMMAND_REGEX = /^\/img\s+(https?:\/\/[^\s]+)/i;
+                    const IMAGE_URL_REGEX = /^(https?:\/\/[^\s]*\.(?:png|gif|jpg|jpeg|webp)[^\s]*)$/i;
+                    const imgCommandMatch = trimmedMessage.match(IMG_COMMAND_REGEX);
+                    const plainLinkMatch = trimmedMessage.match(IMAGE_URL_REGEX);
+                    let urlToShorten = null;
+                    if (imgCommandMatch) { urlToShorten = imgCommandMatch[1]; }
+                    else if (plainLinkMatch) { urlToShorten = plainLinkMatch[1]; }
+                    if (urlToShorten && !urlToShorten.includes('tinyurl.com')) {
+                        GM_xmlhttpRequest({
+                            method: "GET", url: `https://tinyurl.com/api-create.php?url=${encodeURIComponent(urlToShorten)}`,
+                            onload: (response) => {
+                                const shortUrl = response.responseText;
+                                if (shortUrl && shortUrl.startsWith('http')) {
+                                    const newMessage = { ...message, message: `(( ${shortUrl}` };
+                                    originalSend(JSON.stringify(newMessage));
+                                } else { originalSend(data); }
+                            },
+                            onerror: () => { originalSend(data); }
+                        });
+                        return;
+                    }
+                }
+            } catch (e) {}
+            originalSend(data);
         };
-    }
+
+        return wsInstance;
+    };
+}
 
     function initializeVuex() {
         const appElement = document.getElementById('app');
@@ -792,6 +956,7 @@
             console.log("[NodeWatch 2.0] Vuex store accessed successfully.");
             Tracker.sendData();
             Settings.load();
+            MuteManager.init();
             UIManager.init();
             ImageRenderer.init();
             GameFixes.init();
